@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+import json
 from dotenv import load_dotenv
 import google.generativeai as genai
 import os
@@ -89,3 +91,78 @@ async def embeddings(data: dict):
         "anchors": anchor_points,
         "variance_explained": pca.explained_variance_ratio_.tolist()
     }
+
+def compute_attention(response_word: str, prompt_tokens: list[str]) -> list[float]:
+    """
+    Proxy for attention: cosine similarity between response word
+    and each prompt token using character n-gram overlap.
+    """
+    def ngrams(text, n=3):
+        text = text.lower()
+        return set(text[i:i+n] for i in range(len(text) - n + 1))
+
+    response_ng = ngrams(response_word)
+    scores = []
+    for token in prompt_tokens:
+        token_ng = ngrams(token)
+        if not response_ng or not token_ng:
+            scores.append(0.0)
+            continue
+        intersection = len(response_ng & token_ng)
+        union = len(response_ng | token_ng)
+        scores.append(intersection / union if union else 0.0)
+
+    # Boost: exact substring match
+    for i, token in enumerate(prompt_tokens):
+        if response_word.lower() in token.lower() or token.lower() in response_word.lower():
+            scores[i] = min(1.0, scores[i] + 0.5)
+
+    # Normalize so scores sum to 1
+    total = sum(scores)
+    if total > 0:
+        scores = [s / total for s in scores]
+
+    return scores
+
+@app.post("/api/attention-stream")
+async def attention_stream(data: dict):
+    prompt = data.get("prompt", "")
+    import re
+    prompt_tokens = [t for t in re.findall(r"\w+|[^\w\s]", prompt) if not t.isspace()]
+
+    def generate():
+        response = model.generate_content(prompt, stream=True)
+        buffer = ""
+
+        for chunk in response:
+            if not chunk.text:
+                continue
+            buffer += chunk.text
+            # Emit word by word
+            words = buffer.split(" ")
+            for word in words[:-1]:  # hold last partial word
+                clean = word.strip()
+                if not clean:
+                    continue
+                scores = compute_attention(clean, prompt_tokens)
+                payload = json.dumps({
+                    "word": word + " ",
+                    "scores": scores,
+                    "tokens": prompt_tokens,
+                })
+                yield f"data: {payload}\n\n"
+            buffer = words[-1]  # keep remainder
+
+        # Flush last word
+        if buffer.strip():
+            scores = compute_attention(buffer.strip(), prompt_tokens)
+            payload = json.dumps({
+                "word": buffer,
+                "scores": scores,
+                "tokens": prompt_tokens,
+            })
+            yield f"data: {payload}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

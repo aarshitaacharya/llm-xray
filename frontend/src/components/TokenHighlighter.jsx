@@ -40,7 +40,7 @@ export default function TokenHighlighter({ tokens, tokenCount }) {
         </p>
         <span style={{
           fontFamily: "'IBM Plex Mono', monospace",
-          fontSize: "0.85rem",
+          fontSize: "0.8rem",
           color: "#ff6b35",
           background: "#1a0a00",
           border: "1px solid #3a1a00",

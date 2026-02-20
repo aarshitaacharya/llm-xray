@@ -2,6 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import TokenHighlighter from "./components/TokenHighlighter";
 import EmbeddingStarMap from "./components/EmbeddingStarMap";
+import AttentionView from "./components/AttentionView";
 
 export default function App() {
   const [prompt, setPrompt] = useState("");
@@ -10,20 +11,26 @@ export default function App() {
   const [tokenCount, setTokenCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [embeddingData, setEmbeddingData] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   const handleSubmit = async () => {
-    if (!prompt.trim()) return;
-    setLoading(true);
-    const [genRes, tokenRes, embedRes] = await Promise.all([
-      axios.post("/api/generate", { prompt }),
-      axios.post("/api/tokenize", { prompt }),
-      axios.post("/api/embeddings", { prompt }),
-    ]);
-    setResponse(genRes.data.text);
-    setTokens(tokenRes.data.tokens);
-    setTokenCount(tokenRes.data.token_count);
-    setEmbeddingData(embedRes.data);
-    };
+  if (!prompt.trim()) return;
+  setLoading(true);
+  setAnalyzing(false);
+
+  const [genRes, tokenRes, embedRes] = await Promise.all([
+    axios.post("/api/generate", { prompt }),
+    axios.post("/api/tokenize", { prompt }),
+    axios.post("/api/embeddings", { prompt }),
+  ]);
+
+  setResponse(genRes.data.text);
+  setTokens(tokenRes.data.tokens);
+  setTokenCount(tokenRes.data.token_count);
+  setEmbeddingData(embedRes.data);
+  setAnalyzing(true);  // triggers AttentionView stream
+  setLoading(false);
+};
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh"}}>
@@ -169,8 +176,10 @@ export default function App() {
             <EmbeddingStarMap data={embeddingData} />
           </Panel>
 
-          {/* Panel 3 — Attention (coming soon) */}
-          <Panel title="ATTENTION VIEW" tag="part 4" accent="#c77dff" locked />
+          {/* Panel 3 — Attention */}
+          <Panel title="ATTENTION VIEW" tag="part 4" accent="#c77dff">
+            <AttentionView prompt={prompt} isAnalyzing={analyzing} />
+          </Panel>
 
           {/* Panel 4 — Temperature Lab (coming soon) */}
           <Panel title="PROBABILITY LAB" tag="part 5" accent="#ffd166" locked />
