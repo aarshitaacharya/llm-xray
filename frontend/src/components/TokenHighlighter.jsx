@@ -25,22 +25,22 @@ export default function TokenHighlighter({ tokens, tokenCount }) {
       <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: "1rem" }}>
         <p style={{
           fontFamily: "'IBM Plex Mono', monospace",
-          fontSize: "0.6rem",
+          fontSize: "0.85rem",
           color: "#aaa",
           lineHeight: "1.8",
           borderLeft: "2px solid #ff6b35",
           paddingLeft: "0.6rem",
         }}>
           Tokenization is the process of breaking text into small pieces (“tokens”) that
-a language model reads and reasons over.
+        a language model reads and reasons over.
 
-The count shown is the true Gemini token cost for this prompt. The colored
-blocks are a visual approximation to help you see how text structure maps to
-tokens—actual model boundaries may differ.
+        The count shown is the true Gemini token cost for this prompt. The colored
+        blocks are a visual approximation to help you see how text structure maps to
+        tokens—actual model boundaries may differ.
         </p>
         <span style={{
           fontFamily: "'IBM Plex Mono', monospace",
-          fontSize: "0.65rem",
+          fontSize: "0.85rem",
           color: "#ff6b35",
           background: "#1a0a00",
           border: "1px solid #3a1a00",
