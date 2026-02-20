@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 @app.get("/")
 def health():
@@ -27,3 +27,7 @@ async def generate(data: dict):
     prompt = data.get("prompt", "")
     response = model.generate_content(prompt)
     return {"text": response.text}
+
+@app.get("/models")
+def list_models():
+    return {"models": [m.name for m in genai.list_models()]}
