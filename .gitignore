@@ -1,0 +1,37 @@
+# ========================
+# Python / Backend
+# ========================
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/.env
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ========================
+# Node / Frontend
+# ========================
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# ========================
+# IDEs & Editors
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ========================
+# Misc
+# ========================
+*.log
+.env
+.env.local
