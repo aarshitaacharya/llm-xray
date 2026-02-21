@@ -228,3 +228,46 @@ Be honest — lower scores for speculative or creative claims, higher for facts.
     import asyncio
     results = await asyncio.gather(*[generate_at_temp(t) for t in temperatures])
     return {"results": list(results)}
+
+@app.post("/api/factcheck")
+async def factcheck(data: dict):
+    response_text = data.get("response_text", "")
+
+    audit_prompt = f"""You are a rigorous fact-checker. Analyze this AI-generated text and identify every distinct factual claim.
+
+TEXT TO ANALYZE:
+{response_text}
+
+Return ONLY a JSON array. No explanation, no markdown, no code fences. Just raw JSON like this:
+[
+  {{"claim": "exact short phrase from text", "verdict": "verified", "reason": "why"}},
+  {{"claim": "another phrase", "verdict": "uncertain", "reason": "why"}},
+  {{"claim": "another phrase", "verdict": "hallucination", "reason": "why"}}
+]
+
+verdict must be exactly one of: "verified", "uncertain", "hallucination"
+Keep claims short (under 10 words). Extract 3-8 claims maximum."""
+
+    response = model.generate_content(
+        audit_prompt,
+        generation_config={"temperature": 0.1}
+    )
+
+    raw = response.text.strip()
+
+    # Strip markdown code fences if model ignores instructions
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+
+    try:
+        claims = json.loads(raw)
+    except json.JSONDecodeError:
+        # Fallback: try to extract array from anywhere in the text
+        match = re.search(r'\[.*\]', raw, re.DOTALL)
+        if match:
+            claims = json.loads(match.group())
+        else:
+            claims = []
+
+    return {"claims": claims}

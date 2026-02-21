@@ -4,6 +4,7 @@ import TokenHighlighter from "./components/TokenHighlighter";
 import EmbeddingStarMap from "./components/EmbeddingStarMap";
 import AttentionView from "./components/AttentionView";
 import TemperatureLab from "./components/TemperatureLab";
+import FactCheck from "./components/FactCheck";
 
 export default function App() {
   const [prompt, setPrompt] = useState("");
@@ -187,7 +188,9 @@ export default function App() {
             <TemperatureLab initialPrompt={prompt} />
           </Panel>
           {/* Panel 5 — Hallucination (coming soon) */}
-          <Panel title="FACT-CHECK" tag="part 6" accent="#ef476f" locked />
+          <Panel title="FACT-CHECK" tag="part 6" accent="#ef476f">
+            <FactCheck responseText={response} autoRun={!!response && analyzing} />
+          </Panel>
 
           {/* Panel 6 — Context Window (coming soon) */}
           <Panel title="CONTEXT FUEL GAUGE" tag="part 7" accent="#06d6a0" locked />
