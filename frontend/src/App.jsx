@@ -5,6 +5,7 @@ import EmbeddingStarMap from "./components/EmbeddingStarMap";
 import AttentionView from "./components/AttentionView";
 import TemperatureLab from "./components/TemperatureLab";
 import FactCheck from "./components/FactCheck";
+import ContextGauge from "./components/ContextGauge";
 
 export default function App() {
   const [prompt, setPrompt] = useState("");
@@ -193,8 +194,9 @@ export default function App() {
           </Panel>
 
           {/* Panel 6 — Context Window (coming soon) */}
-          <Panel title="CONTEXT FUEL GAUGE" tag="part 7" accent="#06d6a0" locked />
-
+          <Panel title="CONTEXT FUEL GAUGE" tag="part 7" accent="#06d6a0" span={2}>
+            <ContextGauge />
+          </Panel>
         </main>
       </div>
     </div>

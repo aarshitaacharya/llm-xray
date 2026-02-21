@@ -271,3 +271,36 @@ Keep claims short (under 10 words). Extract 3-8 claims maximum."""
             claims = []
 
     return {"claims": claims}
+
+
+CONTEXT_LIMIT = 1048576  # gemini-2.5-flash max context
+
+@app.post("/api/chat")
+async def chat(data: dict):
+    messages = data.get("messages", [])
+    
+    # Build conversation for Gemini
+    history = []
+    for msg in messages[:-1]:  # all but last
+        history.append({
+            "role": msg["role"],
+            "parts": [msg["content"]]
+        })
+    
+    current_prompt = messages[-1]["content"] if messages else ""
+    
+    # Count tokens for the full conversation
+    full_text = " ".join(m["content"] for m in messages)
+    token_result = model.count_tokens(contents=full_text)
+    total_tokens = token_result.total_tokens
+    
+    # Generate response with history
+    chat_session = model.start_chat(history=history)
+    response = chat_session.send_message(current_prompt)
+    
+    return {
+        "response": response.text,
+        "total_tokens": total_tokens,
+        "context_limit": CONTEXT_LIMIT,
+        "percent_used": round((total_tokens / CONTEXT_LIMIT) * 100, 2),
+    }
