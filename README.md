@@ -38,7 +38,7 @@ After the main response is generated, a second hidden Gemini call audits it at t
 
 ### Context Fuel Gauge
 An independent chat interface that tracks how much of Gemini's context window your conversation has consumed. A gauge bar fills as you exchange messages. A marker at the 80% threshold indicates the danger zone. When usage crosses that threshold, the oldest messages in the conversation are visually grayed out and flagged as purged from the active context — illustrating what actually happens when a model runs out of context. Three stat chips show the exact token count, number of purged messages, and number of active messages in the current window.
----
+
 
 ## Setup
 
