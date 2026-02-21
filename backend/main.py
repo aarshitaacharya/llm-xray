@@ -166,3 +166,65 @@ async def attention_stream(data: dict):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+@app.post("/api/temperature-lab")
+async def temperature_lab(data: dict):
+    prompt = data.get("prompt", "")
+    temperatures = [0.1, 0.7, 1.5]
+
+    async def generate_at_temp(temp: float) -> dict:
+        import asyncio
+        meta_prompt = f"""Answer this prompt: "{prompt}"
+
+After your answer, on a new line write SCORES: followed by a JSON array of confidence scores (0.0-1.0) for each sentence in your answer, in order. Like:
+SCORES: [0.95, 0.72, 0.45]
+
+Be honest — lower scores for speculative or creative claims, higher for facts."""
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: genai.GenerativeModel(
+                "models/gemini-2.5-flash",
+                generation_config={"temperature": temp}
+            ).generate_content(meta_prompt)
+        )
+
+        raw = response.text
+        sentences = []
+        scores = []
+
+        if "SCORES:" in raw:
+            parts = raw.split("SCORES:")
+            answer_text = parts[0].strip()
+            score_part = parts[1].strip()
+            try:
+                import re
+                score_json = re.search(r'\[.*?\]', score_part, re.DOTALL)
+                if score_json:
+                    scores = json.loads(score_json.group())
+            except:
+                scores = []
+
+            # Split into sentences
+            import re
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', answer_text) if s.strip()]
+        else:
+            import re
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', raw) if s.strip()]
+            scores = [0.7] * len(sentences)
+
+        # Pad/trim scores to match sentences
+        while len(scores) < len(sentences):
+            scores.append(0.5)
+        scores = scores[:len(sentences)]
+
+        return {
+            "temperature": temp,
+            "sentences": sentences,
+            "scores": scores,
+        }
+
+    import asyncio
+    results = await asyncio.gather(*[generate_at_temp(t) for t in temperatures])
+    return {"results": list(results)}

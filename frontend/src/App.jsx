@@ -3,6 +3,7 @@ import axios from "axios";
 import TokenHighlighter from "./components/TokenHighlighter";
 import EmbeddingStarMap from "./components/EmbeddingStarMap";
 import AttentionView from "./components/AttentionView";
+import TemperatureLab from "./components/TemperatureLab";
 
 export default function App() {
   const [prompt, setPrompt] = useState("");
@@ -182,8 +183,9 @@ export default function App() {
           </Panel>
 
           {/* Panel 4 — Temperature Lab (coming soon) */}
-          <Panel title="PROBABILITY LAB" tag="part 5" accent="#ffd166" locked />
-
+          <Panel title="PROBABILITY LAB" tag="part 5" accent="#ffd166">
+            <TemperatureLab initialPrompt={prompt} />
+          </Panel>
           {/* Panel 5 — Hallucination (coming soon) */}
           <Panel title="FACT-CHECK" tag="part 6" accent="#ef476f" locked />
 

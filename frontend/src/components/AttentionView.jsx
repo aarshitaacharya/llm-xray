@@ -110,7 +110,7 @@ export default function AttentionView({ prompt, isAnalyzing }) {
         paddingLeft: "0.6rem", lineHeight: "1.7",
       }}>
         Gemini’s internal attention weights are proprietary and not exposed.  
-  This panel shows a <span style={{ color: "#c77dff" }}>simulated attention view</span>  
+  This panel shows a <span style={{ color: "#c77dff" }}>simulated attention view </span>  
   that approximates which input tokens the model might focus on, using n-gram similarity between the input and output.  
   Hover over any word in the response to freeze and explore its attention pattern, helping you understand the model’s token-level reasoning.
       </p>
