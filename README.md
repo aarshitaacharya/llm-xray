@@ -1,8 +1,10 @@
 # LLM X-Ray
 
-A visual debugger for large language models. Instead of treating AI as a black box, LLM X-Ray breaks down every concept that makes a language model work — tokenization, embeddings, attention, sampling, hallucinations, and context windows — and renders each one as an interactive panel in a live dashboard.
+A visual debugger for large language models. Instead of treating an LLM as a black box, LLM X-Ray breaks down every concept that makes one work — tokenization, embeddings, attention, sampling, hallucinations, throughput, cost, and the context window — and renders each as a live panel in a seven-panel dashboard.
 
-Built with React, FastAPI, and the Gemini API.
+Every panel is fed by its own server-sent-event stream, so results fill in as they are produced rather than appearing all at once when a request finishes.
+
+Built with React, FastAPI, and the Gemini API. Containerized and deployed on AWS ECS Fargate.
 
 ## Screenshots
 
@@ -11,88 +13,170 @@ Built with React, FastAPI, and the Gemini API.
 ![Embedding Star Map and Attention View](images/2.png)
 
 ![Fact Check and Temperature Lab](images/3.png)
----
-
-## What It Does
-
-Most developers and learners interact with LLMs through a simple text-in, text-out interface. LLM X-Ray replaces that with a seven-panel dashboard where every panel teaches a real concept by making it visible and interactive in real time.
 
 ---
 
-## Panels
+## Architecture
 
-### Tokenizer
-Submitting a prompt triggers a call to Gemini's token counting API, which returns the precise token count for your input. The dashboard renders each word and punctuation mark as a colored chip. The count shown is accurate; the visual boundaries between chips are an approximation, since Gemini does not expose exact tokenization boundaries. A disclaimer makes this clear. Hovering any chip shows its index.
+```
+React 19 + Vite                    FastAPI (Python 3.12)
+┌─────────────────────┐            ┌──────────────────────────────┐
+│  7 panels           │  SSE       │  7 streaming endpoints       │
+│  useSSE / streamSSE │ ─────────► │  /api/stream/*               │
+└─────────────────────┘            └───────────┬──────────────────┘
+                                               │
+                        ┌──────────────────────┼─────────────────┐
+                        ▼                      ▼                 ▼
+                  Gemini API            numpy SVD / PCA       Amazon SNS
+                  (generate,            (768-d → 3-d)         (threshold
+                   embed, count)                               alerts)
+```
 
-### Embedding Star Map
-Your prompt is encoded into a high-dimensional vector using `models/gemini-embedding-001`. Fifteen anchor concepts — words like "dog", "cat", "king", "science", "art", "war" — are embedded in the same space. PCA reduces all sixteen vectors to three dimensions, and the result is rendered as an interactive 3D scatter plot using Plotly. Your prompt appears as a highlighted point. Concepts that are semantically close to your prompt cluster nearby. The percentage of variance preserved by the PCA reduction is shown so you understand how much information was lost in the compression.
+A single container serves both halves: the Vite build is compiled into static assets and mounted under the FastAPI app, so there is one origin, one port, and no CORS in production.
 
-### Attention View
-Gemini's real attention weights are proprietary and inaccessible. This panel simulates the concept using n-gram cosine similarity as a proxy. As the model streams its response word by word, each new word is scored against every token in the original prompt. Tokens that score highly light up in purple — the brighter the highlight, the stronger the simulated attention. Hovering any word in the response freezes the heat map on that word's pattern, letting you explore how different response words relate back to the prompt.
+---
 
-### Probability Lab
-The same prompt is sent to three parallel Gemini calls with temperatures of 0.1, 0.7, and 1.5. Each call also asks the model to self-report a confidence score for every sentence it produces. The three responses are displayed in side-by-side columns — conservative, balanced, and chaotic — with a colored bar under each sentence showing the model's reported certainty. High temperature responses tend to produce more variance in both content and confidence scores.
+## Panels and endpoints
 
-### Fact-Check
-After the main response is generated, a second hidden Gemini call audits it at temperature 0.1. This call is given a strict prompt instructing it to extract every factual claim and classify each one as verified, uncertain, or a likely hallucination. The results are rendered in two ways: inline highlights over the original response text (color-coded by verdict), and a breakdown list below showing the claim, its verdict, and the auditor's reasoning. Hovering a highlighted phrase shows the full explanation. The panel includes a disclaimer that this is AI auditing AI — a useful signal, not ground truth.
+Each panel maps to exactly one SSE endpoint.
 
-### Context Fuel Gauge
-An independent chat interface that tracks how much of Gemini's context window your conversation has consumed. A gauge bar fills as you exchange messages. A marker at the 80% threshold indicates the danger zone. When usage crosses that threshold, the oldest messages in the conversation are visually grayed out and flagged as purged from the active context — illustrating what actually happens when a model runs out of context. Three stat chips show the exact token count, number of purged messages, and number of active messages in the current window.
+| # | Panel | Endpoint | What streams |
+|---|---|---|---|
+| 1 | Tokenizer | `POST /api/stream/tokenize` | exact token count, then each token chip in order |
+| 2 | Generation Stream | `POST /api/stream/generate` | response chunks, with live tokens/sec and cost |
+| 3 | Embedding Star Map | `POST /api/stream/embeddings` | per-vector embedding progress, then the 3D PCA projection |
+| 4 | Attention View | `POST /api/stream/attention` | each generated word with its simulated attention over the prompt |
+| 5 | Probability Lab | `POST /api/stream/temperature` | three concurrent calls, each column rendering as its call returns |
+| 6 | Fact-Check | `POST /api/stream/factcheck` | each audited claim as it is extracted |
+| 7 | Context Fuel Gauge | `POST /api/stream/chat` | reply chunks, context usage, SNS alert result, purge instruction |
 
+Two supporting routes: `GET /healthz` (ECS health check) and `GET /api/config` (limits and pricing the dashboard renders).
 
-## Setup
+### Wire format
 
-### Prerequisites
+Every endpoint speaks the same protocol — newline-delimited `data:` frames, each a JSON object with a `type` discriminator, terminated by a literal `data: [DONE]`:
 
-- Python 3.10 or later
-- Node.js 18 or later
-- A Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+```
+data: {"type": "token", "text": "Paris ", "metrics": {...}}
+data: {"type": "metrics", "output_tokens": 42, "tokens_per_second": 31.5, "cost_usd": 0.000112}
+data: [DONE]
+```
 
-### Backend
+`EventSource` only issues GET requests and every panel posts a JSON body, so the client reads the `fetch` response body directly ([`src/lib/sse.js`](frontend/src/lib/sse.js)) instead.
+
+---
+
+## What each panel does
+
+### 1. Tokenizer
+Calls Gemini's token-counting API for the exact token cost of the prompt, then streams each piece in as a colored chip. The **count is accurate**; the chip boundaries are an approximation, because Gemini does not expose its true tokenization boundaries. The panel says so.
+
+### 2. Generation Stream
+The raw response, streamed chunk by chunk. Throughput and cost update as it arrives. Interim frames estimate output tokens from word count; the final frame replaces that estimate with Gemini's own reported `usage_metadata`, so the number you end up looking at is authoritative rather than inferred.
+
+### 3. Embedding Star Map
+Embeds the prompt and fifteen fixed anchor concepts, then reduces all sixteen vectors to three dimensions with PCA and plots them. The panel reports how much variance the projection preserved, so you can tell when the 3D view is misleading. Anchor embeddings are computed once and cached — re-embedding fifteen constants on every prompt is fifteen wasted API calls.
+
+The PCA runs on numpy's SVD directly. At this shape (16x768, 3 components) scikit-learn's default solver is its *randomized* approximation, so dropping the dependency made the projection exact and cut ~270MB from the container image.
+
+### 4. Attention View
+Gemini does not expose real attention weights. This panel builds a **simulated** attention map from character n-gram similarity between each output word and each prompt token, normalized to sum to 1. Hover any word to freeze its pattern. It is a teaching aid for what attention does, not a readout of the model's internals, and the UI states that plainly.
+
+### 5. Probability Lab
+The same prompt at three temperatures (0.1, 0.7, 1.5), fired as three concurrent inference calls. Columns render in completion order rather than waiting for the slowest. Each sentence carries a confidence score **self-reported by the model** — a useful signal, not ground truth.
+
+### 6. Fact-Check
+A second, low-temperature Gemini call audits the first response and extracts claims as verified / uncertain / hallucination. Claims stream back one at a time and are highlighted inline in the original text. AI fact-checking AI is a signal, not proof.
+
+### 7. Context Fuel Gauge
+An independent chat that meters its own context consumption: tokens used against the model's window, tokens/sec, and cost per request. Crossing 80% of the window publishes an **Amazon SNS notification** and drops the oldest messages from the active context — the purge every production chat app eventually has to implement, made visible.
+
+The alert result is reported honestly: if SNS is unconfigured or the publish fails, the panel says the alert was **not** sent and why, rather than showing a success it did not get.
+
+---
+
+## Running locally
+
+Requires Python 3.12+, Node 20+, and a [Gemini API key](https://aistudio.google.com/apikey).
+
+```bash
+# backend
+cd backend
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+echo "GEMINI_API_KEY=your-key-here" > .env
+uvicorn main:app --reload --port 8000
+
+# frontend (second terminal)
+cd frontend
+npm install
+npm run dev          # http://localhost:5173, proxies /api to :8000
+```
+
+SNS alerts stay disabled locally unless `SNS_TOPIC_ARN` is set; the gauge still purges and says why no alert went out.
+
+### Tests
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate       # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pytest -q
 ```
 
-Create a `.env` file in the `backend/` directory:
-
-```
-GEMINI_API_KEY=your_key_here
-```
-
-Start the server:
-
-```bash
-uvicorn main:app --reload
-```
-
-The API will be available at `http://localhost:8000`.
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The app will be available at `http://localhost:5173`. Vite proxies all `/api` requests to the FastAPI backend automatically.
+Thirty-five tests cover the SSE contract of all seven endpoints against a mocked Gemini SDK — no API key, no network, no quota — plus the parsing and metering helpers. They assert the things that are easy to get quietly wrong: token chips reassembling into the original prompt, attention scores summing to 1, the meter preferring reported usage over its own estimate, a chunk carrying no text not truncating the stream, and a failed SNS publish never being reported as sent.
 
 ---
 
-## API Endpoints
+## Configuration
 
-| Method | Path | Description |
+All settings are environment variables ([`backend/config.py`](backend/config.py)).
+
+| Variable | Default | Purpose |
 |---|---|---|
-| POST | `/api/generate` | Generate a response from Gemini |
-| POST | `/api/tokenize` | Count tokens and return approximate visual splits |
-| POST | `/api/embeddings` | Embed the prompt and anchor concepts, return PCA-reduced 3D coordinates |
-| POST | `/api/attention-stream` | Stream a response with per-word n-gram attention scores (SSE) |
-| POST | `/api/temperature-lab` | Run three parallel generations at different temperatures |
-| POST | `/api/factcheck` | Audit a response for hallucinated or uncertain claims |
-| POST | `/api/chat` | Multi-turn chat with token tracking for the context gauge |
+| `GEMINI_API_KEY` | — | required |
+| `CHAT_MODEL` | `gemini-2.5-flash` | generation model |
+| `EMBEDDING_MODEL` | `models/gemini-embedding-001` | embedding model |
+| `CONTEXT_LIMIT` | `1048576` | context window used by the gauge |
+| `PURGE_THRESHOLD` | `0.80` | fraction that triggers alert + purge |
+| `PURGE_BATCH_SIZE` | `2` | messages dropped per purge |
+| `INPUT_COST_PER_1M` | `0.30` | USD per 1M input tokens |
+| `OUTPUT_COST_PER_1M` | `2.50` | USD per 1M output tokens |
+| `SNS_TOPIC_ARN` | — | set to enable alerts |
+| `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS origins for dev |
+| `STATIC_DIR` | `static` | built frontend, set in the image |
+
+Pricing is configurable rather than hardcoded because list prices move, and a stale constant silently makes every cost readout wrong.
 
 ---
+
+## Deploying to AWS ECS
+
+```bash
+GEMINI_API_KEY=your-key ALERT_EMAIL=you@example.com ./infra/provision.sh
+./infra/deploy.sh
+```
+
+`provision.sh` is idempotent and creates the ECR repository (with a 5-image lifecycle policy), the SNS topic and email subscription, the CloudWatch log group, the two IAM roles, the SSM SecureString holding the Gemini key, the ECS cluster, and a security group.
+
+`deploy.sh` builds for `linux/amd64` — an Apple Silicon host would otherwise push an arm64 image Fargate cannot start — pushes to ECR, registers the task definition, creates or updates the Fargate service, waits for it to stabilize, and prints the public URL.
+
+Two roles, not one: the **execution role** reads the Gemini key from SSM before the container starts; the **task role** is what the running app holds, and it is scoped to `sns:Publish` on one topic. The API key is never baked into the image or the task definition.
+
+```bash
+./infra/teardown.sh          # delete the service — stops all Fargate charges
+./infra/teardown.sh --all    # also remove cluster, ECR, SNS, roles, logs
+```
+
+A single 0.5 vCPU / 1 GB Fargate task plus its public IPv4 address runs about **$21/month** if left up. `teardown.sh` exists because a portfolio project should not quietly bill you.
+
+---
+
+## Notes on honesty
+
+Three panels show approximations, and each says so in the UI rather than in the README only:
+
+- **Token chips** are visual boundaries, not Gemini's real ones. The count is real.
+- **Attention** is simulated from n-gram similarity. Gemini's weights are not public.
+- **Confidence scores** are the model's own claims about itself, not calibrated probabilities.
+
+An observability tool that misrepresents its own precision is worse than no tool, so the approximations are labeled where someone will actually read them.

@@ -2,9 +2,9 @@
 # Python / Backend
 # ========================
 backend/venv/
-backend/__pycache__/
-backend/*.pyc
-backend/*.pyo
+__pycache__/
+*.pyc
+*.pyo
 backend/.env
 *.egg-info/
 .pytest_cache/
@@ -35,3 +35,8 @@ Thumbs.db
 *.log
 .env
 .env.local
+
+# ========================
+# Infrastructure
+# ========================
+infra/.env.generated
