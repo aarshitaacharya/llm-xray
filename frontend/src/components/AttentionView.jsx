@@ -52,6 +52,12 @@ export default function AttentionView({ prompt, runId }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [words]);
 
+  // An all-zero vector is a real result, not a failure: the active word shares
+  // no character n-grams with any prompt token. Say so, or the dark map reads
+  // as a broken panel.
+  const hasNoOverlap =
+    activeScores.length > 0 && activeScores.every((s) => s === 0);
+
   if (!prompt) return <div style={emptyState}>run a prompt to see simulated attention</div>;
 
   return (
@@ -65,7 +71,14 @@ export default function AttentionView({ prompt, runId }) {
       </p>
 
       <div>
-        <div style={sectionLabel}>PROMPT — attention heat map</div>
+        <div style={sectionLabel}>
+          PROMPT — attention heat map
+          {hasNoOverlap && (
+            <span style={{ color: "#555", marginLeft: "0.5rem" }}>
+              (no lexical overlap for this word)
+            </span>
+          )}
+        </div>
         <div style={{ ...surface, display: "flex", flexWrap: "wrap", gap: "5px" }}>
           {tokens.length === 0 ? (
             <span style={{ fontFamily: MONO, fontSize: "0.65rem", color: "#333" }}>
