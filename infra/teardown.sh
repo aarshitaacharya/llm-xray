@@ -45,5 +45,13 @@ aws iam delete-role-policy --role-name "$TASK_ROLE_NAME" --policy-name publish-c
 aws iam delete-role --role-name "$TASK_ROLE_NAME" 2>/dev/null || true
 ok "IAM roles deleted"
 
+SG_ID="$(aws ec2 describe-security-groups --region "$AWS_REGION" \
+  --filters Name=group-name,Values="$SG_NAME" \
+  --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo None)"
+if [[ -n "$SG_ID" && "$SG_ID" != "None" ]]; then
+  aws ec2 delete-security-group --group-id "$SG_ID" --region "$AWS_REGION" >/dev/null 2>&1 || true
+  ok "Security group $SG_ID deleted"
+fi
+
 rm -f "$(dirname "$0")/.env.generated"
 log "Teardown complete"
